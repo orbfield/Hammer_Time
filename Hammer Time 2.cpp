@@ -1,9 +1,7 @@
 #include <opencv2/opencv.hpp>
-#include <opencv2/core/utility.hpp>
 #include <iostream>
 #include <vector>
 #include "C:\Dev\Iibaries\rtmidi-5.0.0\RtMidi.h"
-
 
 int main()
 {
@@ -39,7 +37,7 @@ int main()
 
     std::vector<unsigned char> messageOff(3);
     messageOff[0] = 0x80; // Note Off message
-    messageOff[1] = 60;   // pitch = middle C
+    messageOff[1] = 60;   
     messageOff[2] = 0;    // velocity
     midiOut.sendMessage(&messageOff);
 
@@ -74,7 +72,7 @@ int main()
     bool prev_switch1_state[num_cols] = { false };
     bool prev_switch2_state[num_cols] = { false };
 
-    //define vector for switch timer
+    // Define vector for switch timer
     std::vector<cv::TickMeter> start_switch_timer(num_cols);
 
     // Loop over the video frames
@@ -136,7 +134,7 @@ int main()
             int count1 = cv::countNonZero(roi_binary1);
             int count2 = cv::countNonZero(roi_binary2);
 
-            // Check if switches 1 is on or off 
+            // Check if switch 1 is on or off 
             bool switch1_on = false;
             if (count1 > 70) {
                 switch1_on = true;
@@ -195,9 +193,6 @@ int main()
                 cv::Mat roi_binary_comb;
                 cv::vconcat(roi_binary2, roi_binary1, roi_binary_comb);
                 std::string switch_names = col_labels[j] + " switches";
-                cv::namedWindow(switch_names, cv::WINDOW_NORMAL);
-                cv::imshow(switch_names, roi_binary_comb);
-            
                 cv::namedWindow(switch_names, cv::WINDOW_NORMAL);
                 cv::imshow(switch_names, roi_binary_comb);
             }            
