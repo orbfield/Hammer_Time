@@ -1,4 +1,5 @@
 #include <opencv2/opencv.hpp>
+#include <opencv2/videoio.hpp>
 #include <iostream>
 #include <vector>
 #include "C:\Dev\Iibaries\rtmidi-5.0.0\RtMidi.h"
@@ -24,7 +25,7 @@ int main()
 
     RtMidiOut midiOut;
     midiOut.openPort(1);
-
+    
     // Test midi
     std::vector<unsigned char> messageOn(3);
     messageOn[0] = 0x90; // Note On message
@@ -44,14 +45,19 @@ int main()
     // Create webcam feed
     cv::namedWindow("Hammer Time", cv::WINDOW_NORMAL);
 
-    cv::VideoCapture cap(cv::CAP_ANY);
+    cv::VideoCapture cap(cv::CAP_DSHOW);
+    cap.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M', 'J', 'P', 'G'));
     cap.set(cv::CAP_PROP_FRAME_WIDTH, 640);
     cap.set(cv::CAP_PROP_FRAME_HEIGHT, 480);
-    cap.set(cv::CAP_PROP_FPS, 60);
+    cap.set(cv::CAP_PROP_FPS, 120);
+
     if (!cap.isOpened()) {
         std::cout << "Error opening video stream" << std::endl;
         return -1;
     }
+
+    double actual_fps = cap.get(cv::CAP_PROP_FPS);
+    std::cout << "Actual frame rate: " << actual_fps << " fps" << std::endl;
 
     // Define the grid parameters and labels
     const int num_rows = 1;
@@ -160,19 +166,20 @@ int main()
                 switch2_on = true;
             }
             if (switch2_on && !prev_switch2_state[j]) {
-                // Switch 2 turned on: send midi
-                int midi_pitch = 62 + j;
-                std::vector<unsigned char> messageOn(3);
-                messageOn[0] = 0x90;
-                messageOn[1] = midi_pitch;
-                messageOn[2] = 100;
-                midiOut.sendMessage(&messageOn);
+                // Switch 2 turned on: calculate velocity send midi
 
                 // Finish switch timer
                 start_switch_timer[j].stop();
                 int64 switch1_ticks = start_switch_timer[j].getTimeTicks();
                 double switch1_elapsed_time = static_cast<double>(switch1_ticks) / cv::getTickFrequency();
                 std::cout << "~ " << j << ": " << switch1_elapsed_time * 1000 << " ms\n";
+
+                int midi_pitch = 62 + j;
+                std::vector<unsigned char> messageOn(3);
+                messageOn[0] = 0x90;
+                messageOn[1] = midi_pitch;
+                messageOn[2] = 100;
+                midiOut.sendMessage(&messageOn);
             }
             if (!switch2_on && prev_switch2_state[j]) {
                 // Switch 2 turned off
@@ -186,8 +193,8 @@ int main()
             cv::Scalar color1(0, 150, 0);
             cv::Scalar color2(0, 150, 0);
             cv::rectangle(frame, roi1, color1, 1);
-            cv::rectangle(frame, roi2, color2, 1);
-
+            cv::rectangle(frame, roi2, color2, 1);            
+            
             // Display the first 12 pairs of switches
             if (j < 12) {
                 cv::Mat roi_binary_comb;
@@ -208,7 +215,7 @@ int main()
         cv::Mat black_image = cv::Mat::zeros(frame.size(), frame.type());
         black_image.setTo(cv::Scalar(0, 0, 0));
         black_image.copyTo(frame, mask);
-
+        
         // Calculate FPS and display
         double tick = cv::getTickCount();
         double delta = (tick - last_tick) / cv::getTickFrequency();
