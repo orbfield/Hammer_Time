@@ -6,7 +6,6 @@
 
 int main()
 {
-    // FPS calculation
     double fps = 0;
     double last_tick = 0;
 
@@ -34,30 +33,28 @@ int main()
     midiOut.sendMessage(&messageOn);
 
     // Haha
-    cv::waitKey(1000);
+    cv::waitKey(1000); 
 
     std::vector<unsigned char> messageOff(3);
     messageOff[0] = 0x80; // Note Off message
     messageOff[1] = 60;   
-    messageOff[2] = 0;    // velocity
+    messageOff[2] = 0;    
     midiOut.sendMessage(&messageOff);
 
     // Create webcam feed
     cv::namedWindow("Hammer Time", cv::WINDOW_NORMAL);
 
     cv::VideoCapture cap(cv::CAP_DSHOW);
-    cap.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M', 'J', 'P', 'G'));
-    cap.set(cv::CAP_PROP_FRAME_WIDTH, 640);
+    cap.set(cv::CAP_PROP_FRAME_WIDTH, 620);
     cap.set(cv::CAP_PROP_FRAME_HEIGHT, 480);
-    cap.set(cv::CAP_PROP_FPS, 120);
+    cap.set(cv::CAP_PROP_FPS, 120); 
+    cap.set(cv::CAP_PROP_EXPOSURE, -7);  // This was the fix for low fps
 
     if (!cap.isOpened()) {
         std::cout << "Error opening video stream" << std::endl;
         return -1;
     }
 
-    double actual_fps = cap.get(cv::CAP_PROP_FPS);
-    std::cout << "Actual frame rate: " << actual_fps << " fps" << std::endl;
 
     // Define the grid parameters and labels
     const int num_rows = 1;
@@ -67,10 +64,6 @@ int main()
     const int box_height = 480;
 
     std::vector<std::string> col_labels = {"D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A"};
-    std::vector<std::string> row_labels(num_rows);
-    for (int i = 0; i < num_rows; i++) {
-        row_labels[i] = std::to_string(num_rows - i);
-    }
 
     // Define switches
     std::vector<bool> switch1_state(num_cols, false);
@@ -166,9 +159,7 @@ int main()
                 switch2_on = true;
             }
             if (switch2_on && !prev_switch2_state[j]) {
-                // Switch 2 turned on: calculate velocity send midi
-
-                // Finish switch timer
+                // Switch 2 turned on: calculate velocity send midi                
                 start_switch_timer[j].stop();
                 int64 switch1_ticks = start_switch_timer[j].getTimeTicks();
                 double switch1_elapsed_time = static_cast<double>(switch1_ticks) / cv::getTickFrequency();
