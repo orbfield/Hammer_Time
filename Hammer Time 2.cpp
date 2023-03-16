@@ -1,4 +1,4 @@
-#include <opencv2/opencv.hpp>
+﻿#include <opencv2/opencv.hpp>
 #include <opencv2/videoio.hpp>
 #include <iostream>
 #include <vector>
@@ -48,13 +48,12 @@ int main()
     cap.set(cv::CAP_PROP_FRAME_WIDTH, 620);
     cap.set(cv::CAP_PROP_FRAME_HEIGHT, 480);
     cap.set(cv::CAP_PROP_FPS, 120); 
-    cap.set(cv::CAP_PROP_EXPOSURE, -7);  // This was the fix for low fps
+    cap.set(cv::CAP_PROP_EXPOSURE, -7); 
 
     if (!cap.isOpened()) {
         std::cout << "Error opening video stream" << std::endl;
         return -1;
     }
-
 
     // Define the grid parameters and labels
     const int num_rows = 1;
@@ -63,16 +62,35 @@ int main()
     const int box_width_int = static_cast<int>(box_width);
     const int box_height = 480;
 
-    std::vector<std::string> col_labels = {"D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A"};
+    std::vector<std::string> col_labels = { "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A" };
 
     // Define switches
     std::vector<bool> switch1_state(num_cols, false);
     std::vector<bool> switch2_state(num_cols, false);
     bool prev_switch1_state[num_cols] = { false };
     bool prev_switch2_state[num_cols] = { false };
-
-    // Define vector for switch timer
+    //const double switch_distance = 0.0127;
+    
+    // Define switch timer and midi velocity mapping
     std::vector<cv::TickMeter> start_switch_timer(num_cols);
+
+    auto time_to_velocity = [](double elapsed_time_ms) {
+        double min_time = 10.0;
+        double max_time = 50.0;
+        int min_velocity = 127;
+        int max_velocity = 1;
+
+        if (elapsed_time_ms <= min_time) {
+            return min_velocity;
+        }
+        else if (elapsed_time_ms >= max_time) {
+            return max_velocity;
+        }
+        else {
+            double velocity = min_velocity - (min_velocity - max_velocity) * (elapsed_time_ms - min_time) / (max_time - min_time);
+            return static_cast<int>(velocity);
+        }
+    };
 
     // Loop over the video frames
     while (true) {
@@ -165,11 +183,15 @@ int main()
                 double switch1_elapsed_time = static_cast<double>(switch1_ticks) / cv::getTickFrequency();
                 std::cout << "~ " << j << ": " << switch1_elapsed_time * 1000 << " ms\n";
 
+                // Convert elapsed time to MIDI velocity
+                int midi_velocity = time_to_velocity(switch1_elapsed_time * 1000);
+
+                // Send MIDI message
                 int midi_pitch = 62 + j;
                 std::vector<unsigned char> messageOn(3);
                 messageOn[0] = 0x90;
                 messageOn[1] = midi_pitch;
-                messageOn[2] = 100;
+                messageOn[2] = midi_velocity;
                 midiOut.sendMessage(&messageOn);
             }
             if (!switch2_on && prev_switch2_state[j]) {
