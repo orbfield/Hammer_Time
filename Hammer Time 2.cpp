@@ -4,6 +4,54 @@
 #include <vector>
 #include "C:\Dev\Iibaries\rtmidi-5.0.0\RtMidi.h"
 
+// Raw midi function
+int time_to_velocity(double elapsed_time_ms) {
+    double min_time = 10.0;
+    double max_time = 70.0;
+    int max_velocity = 127;
+    int min_velocity = 1;
+
+    if (elapsed_time_ms <= min_time) {
+        return max_velocity;
+    }
+    else if (elapsed_time_ms >= max_time) {
+        return min_velocity;
+    }
+    else {
+        double velocity = max_velocity - (max_velocity - min_velocity) * (elapsed_time_ms - min_time) / (max_time - min_time);
+        return static_cast<int>(velocity);
+    }
+}
+
+// Midi velocity curve function 
+int ConvertMidiValue(int value, double deviation) {
+    if (deviation < -100 || deviation > 100) {
+        throw std::invalid_argument("Value must be between -100 and 100");
+    }
+
+    double minMidiValue = 0.0;
+    double maxMidiValue = 127.0;
+    double midMidiValue = 63.5;
+
+    // Control point for the quadratic bezier curve - range: 0 (min) to 63.5 (max)
+    double controlPointX = midMidiValue + ((deviation / 100) * midMidiValue);
+
+    // Get the percent position of the incoming value in relation to the max
+    double t = static_cast<double>(value) / maxMidiValue;
+
+    // The quadratic bezier curve formula
+    // B(t) = ((1 - t) * (1 - t) * p0) + (2 * (1 - t) * t * p1) + (t * t * p2)
+
+    // t  = the position on the curve between (0 and 1)
+    // p0 = minMidiValue (0)
+    // p1 = controlPointX (the bezier control point)
+    // p2 = maxMidiValue (127)
+
+    int delta = static_cast<int>(std::round((2 * (1 - t) * t * controlPointX) + (t * t * maxMidiValue)));
+
+    return (value - delta) + value;
+}
+
 int main()
 {
     double fps = 0;
@@ -74,24 +122,6 @@ int main()
     // Define switch timer and midi velocity mapping
     std::vector<cv::TickMeter> start_switch_timer(num_cols);
 
-    auto time_to_velocity = [](double elapsed_time_ms) {
-        double min_time = 10.0;
-        double max_time = 50.0;
-        int min_velocity = 127;
-        int max_velocity = 1;
-
-        if (elapsed_time_ms <= min_time) {
-            return min_velocity;
-        }
-        else if (elapsed_time_ms >= max_time) {
-            return max_velocity;
-        }
-        else {
-            double velocity = min_velocity - (min_velocity - max_velocity) * (elapsed_time_ms - min_time) / (max_time - min_time);
-            return static_cast<int>(velocity);
-        }
-    };
-
     // Loop over the video frames
     while (true) {
         // Capture a new frame from the webcam
@@ -117,15 +147,15 @@ int main()
             int x = j * box_width + box_width / 2;
             std::string label = col_labels[j];
             cv::Size text_size = cv::getTextSize(label, cv::FONT_HERSHEY_SIMPLEX, 0.3, 1, nullptr);
-            cv::Point label_origin = text_origin + cv::Point(x - text_size.width / 2, -5);
+            cv::Point label_origin = text_origin + cv::Point(x - text_size.width / 2, -8);
             cv::putText(frame, label, label_origin, cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(0, 128, 0), 1);
         }
 
         // Plot switch 1 and switch 2 for each note
         for (int j = 0; j < num_cols; j++) {
             int x = j * box_width;
-            cv::Rect roi1(x, frame.rows * 0.50, box_width, 5);
-            cv::Rect roi2(x, frame.rows * 0.43, box_width, 5);
+            cv::Rect roi1(x, frame.rows * 0.49, box_width, 4);
+            cv::Rect roi2(x, frame.rows * 0.41, box_width, 4);
             cv::Mat roi_image1 = frame(roi1);
             cv::Mat roi_image2 = frame(roi2);
 
@@ -153,7 +183,7 @@ int main()
 
             // Check if switch 1 is on or off 
             bool switch1_on = false;
-            if (count1 > 70) {
+            if (count1 > 64) {
                 switch1_on = true;
             }
             if (switch1_on && !prev_switch1_state[j]) {                               
@@ -173,7 +203,7 @@ int main()
 
             // Check if switch 2 is on or off 
             bool switch2_on = false;
-            if (count2 > 80) {
+            if (count2 > 74) {
                 switch2_on = true;
             }
             if (switch2_on && !prev_switch2_state[j]) {
@@ -184,7 +214,9 @@ int main()
                 std::cout << "~ " << j << ": " << switch1_elapsed_time * 1000 << " ms\n";
 
                 // Convert elapsed time to MIDI velocity
-                int midi_velocity = time_to_velocity(switch1_elapsed_time * 1000);
+                int raw_velocity = time_to_velocity(switch1_elapsed_time * 1000);
+                double deviation = -50;  // Change from 100 (lower velocities) to -100 (higher velocities) 
+                int midi_velocity = ConvertMidiValue(raw_velocity, deviation);
 
                 // Send MIDI message
                 int midi_pitch = 62 + j;
