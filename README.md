@@ -2,20 +2,28 @@
 Capture motion of piano hammers using Opencv
 
 
-https://user-images.githubusercontent.com/127656509/224650051-21207efb-7dd1-4b6b-98a8-705dc11a42ce.mp4
+
+
+https://user-images.githubusercontent.com/127656509/226453411-39663563-8a32-49f2-b9ce-76d01a8227f8.mp4
 
 
 
-~Virtual Switches created with CountNonZero
 
 
-~Using Visual Studio 2019 with OpenCV 4.7.0 and RTmidi
+~Virtual switches created with cv::countNonZero  
 
 
-~Camera : ELP-USBFHD01M-BFV
+~Using Visual Studio 2019 windows 10 
+
+
+~Libaries: OpenCV 4.7.0, RtMidi and RtAudio
+
+
+~Camera : ELP-USBFHD01M-BFV, fps 100ish
 
 
 ~Grand piano Action : Herburger Brooks 
 
 
-~Massive newbe - any help appreciated!
+~Now sending midi to HammerSound where audio is initialized with RtAudio!
+
