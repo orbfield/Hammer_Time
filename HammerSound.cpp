@@ -8,10 +8,26 @@
 #include <C:/Dev/Iibaries/rtmidi-5.0.0/RtMidi.h>
 #include <atomic>
 #include <fstream>
+#include <mutex>
 
-HammerSound::HammerSound() : isPlaying(false), currentFrequency(0.0), amplitude(0.0) {}
+HammerSound::HammerSound()
+    : isPlaying(false),
+    currentFrequency(0.0),
+    amplitude(0.0),
+    compressor(/*threshold=*/0.1, /*ratio=*/3.0, /*attackTime=*/0.01, /*releaseTime=*/0.2),
+    adsrEnvelope(0.005, 0.05, 1, 0.05) {
+    createSineWaveTable(sineWaveTable);
+}
+
 HammerSound::~HammerSound() {}
 
+void HammerSound::createSineWaveTable(std::vector<double>& waveTable) {
+    waveTable.resize(WAVE_TABLE_SIZE);
+
+    for (unsigned int i = 0; i < WAVE_TABLE_SIZE; ++i) {
+        waveTable[i] = sin(2.0 * M_PI * i / WAVE_TABLE_SIZE);
+    }
+}
 int audioCallback(void* outputBuffer, void* inputBuffer, unsigned int nBufferFrames,
     double streamTime, RtAudioStreamStatus status, void* userData) {
     HammerSound* hammerSound = static_cast<HammerSound*>(userData);
@@ -54,9 +70,19 @@ void HammerSound::sendTestBeep() {
     int testMidiPitch = 69; // A4 (440 Hz)
     int testMidiVelocity = 60;
     int testBeepDuration = 1000;
+    int fadeDuration = 50; // 50ms fade-in duration
 
-    sendNoteOn(testMidiPitch, testMidiVelocity);
-    std::this_thread::sleep_for(std::chrono::milliseconds(testBeepDuration));
+    double fadeInStep = static_cast<double>(testMidiVelocity) / fadeDuration;
+
+    // Apply fade-in
+    for (int i = 0; i <= fadeDuration; ++i) {
+        int velocityStep = static_cast<int>(fadeInStep * i);
+        sendNoteOn(testMidiPitch, velocityStep);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(testBeepDuration - fadeDuration));
+
     sendNoteOff(testMidiPitch);
 }
 
@@ -121,60 +147,62 @@ void HammerSound::run() {
         return;
     }
 }
-
+// Update sendNoteOn function
 void HammerSound::sendNoteOn(int midi_pitch, int midi_velocity) {
-    isPlaying.store(true);
-       
-    currentFrequency.store(146.83 * pow(2.0, (midi_pitch - 50) / 12.0)); 
-    amplitude.store(midi_velocity / 127.0);
-    
-    std::cout << "Note ON: Midi pitch = " << midi_pitch << ", Midi velocity = " << midi_velocity << ", Frequency = " << currentFrequency.load() << " Hz\n";
+    double frequency = 146.83 * pow(2.0, (midi_pitch - 50) / 12.0);
+    double amplitude = midi_velocity / 127.0;
+
+    std::unique_lock<std::mutex> lock(activeNotesMutex);
+    activeNotes.push_back({ frequency, amplitude, 0.0, 0.0, true, 0.0, adsrEnvelope });
+    activeNotes.back().adsrEnvelope.noteOn(); // Trigger the envelope
+    lock.unlock();
+
+    std::cout << "Note ON: Midi pitch = " << midi_pitch << ", Midi velocity = " << midi_velocity << ", Frequency = " << frequency << " Hz\n";
 }
 
+// Update sendNoteOff function
 void HammerSound::sendNoteOff(int midi_pitch) {
-    isPlaying.store(false);
-    
-    currentFrequency.store(0.0);
+    double frequency = 146.83 * pow(2.0, (midi_pitch - 50) / 12.0);
+    for (ActiveNote& note : activeNotes) {
+        if (note.frequency == frequency) {
+            note.adsrEnvelope.noteOff(); // Trigger the release phase
+        }
+    }
     std::cout << "Note OFF: Midi pitch = " << midi_pitch << " \n";
 }
 
-// Process audio output
+
 int HammerSound::processAudioOutput(void* outputBuffer, void* inputBuffer, unsigned int nBufferFrames,
     double streamTime, RtAudioStreamStatus status) {
 
     double* outBuffer = static_cast<double*>(outputBuffer);
-    
+
     double sampleRate = 44100.0;
-    double phaseIncrement = 2.0 * M_PI * currentFrequency.load() / sampleRate;
-    static double phase = 0.0;
-    double carrierFrequency = currentFrequency.load();
-    double modulatorFrequency = carrierFrequency * 1.5; // You can experiment with this value
-    double modulatorAmplitude = 0.1; // You can experiment with this value
+    double carrierFrequency;
 
+    std::unique_lock<std::mutex> lock(activeNotesMutex);
+    for (unsigned int i = 0; i < nBufferFrames; ++i) {
+        double mixedSample = 0.0;
 
-    if (isPlaying.load()) {
-        for (unsigned int i = 0; i < nBufferFrames; ++i) {
-            static double modulatorPhase = 0.0;
-            double modulatorSignal = modulatorAmplitude * sin(modulatorPhase);
-            double sampleValue = amplitude.load() * sin(phase + modulatorSignal);
+        for (ActiveNote& note : activeNotes) {
+            carrierFrequency = note.frequency;
+            unsigned int tableIndex = static_cast<unsigned int>(note.phase) % WAVE_TABLE_SIZE;
 
-            modulatorPhase += 2.0 * M_PI * modulatorFrequency / sampleRate;
-            if (modulatorPhase > 2.0 * M_PI) {
-                modulatorPhase -= 2.0 * M_PI;
-            }
-            outBuffer[i * 2] = sampleValue; // Left channel
-            outBuffer[i * 2 + 1] = sampleValue; // Right channel
-            phase += phaseIncrement;
-            if (phase > 2.0 * M_PI) {
-                phase -= 2.0 * M_PI;
-            }
+            double envelopeAmplitude = note.amplitude * note.adsrEnvelope.process(sampleRate);
+            mixedSample += envelopeAmplitude * sineWaveTable[tableIndex];
+
+            note.phase += WAVE_TABLE_SIZE * carrierFrequency / sampleRate;
+            note.time += 1.0 / sampleRate;
         }
+
+        // Apply a simple mixing method to prevent clipping
+        double scaleFactor = 1.0 / std::sqrt(activeNotes.size());
+        mixedSample *= scaleFactor;
+
+        outBuffer[i * 2] = mixedSample; // Left channel
+        outBuffer[i * 2 + 1] = mixedSample; // Right channel
     }
-    else {
-        memset(outBuffer, 0, nBufferFrames * 2 * sizeof(double));
-    }
+    lock.unlock();
 
     return 0;
 }
-
-

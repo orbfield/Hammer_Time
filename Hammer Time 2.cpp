@@ -9,7 +9,7 @@
 
 // Raw midi function
 int time_to_velocity(double elapsed_time_ms) {
-    double min_time = 0.0;
+    double min_time = 20.0;
     double max_time = 80.0;
     int max_velocity = 127;
     int min_velocity = 1;
@@ -159,8 +159,8 @@ int main()
         // Plot switch 1 and switch 2 for each note
         for (int j = 0; j < num_cols; j++) {
             int x = j * box_width;
-            cv::Rect roi1(x, frame.rows * 0.50, box_width, 4);
-            cv::Rect roi2(x, frame.rows * 0.42, box_width, 4);
+            cv::Rect roi1(x, frame.rows * 0.49, box_width, 4);
+            cv::Rect roi2(x, frame.rows * 0.41, box_width, 4);
             cv::Mat roi_image1 = frame(roi1);
             cv::Mat roi_image2 = frame(roi2);
 
