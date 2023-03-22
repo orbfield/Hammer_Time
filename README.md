@@ -25,5 +25,5 @@ https://user-images.githubusercontent.com/127656509/226453411-39663563-8a32-49f2
 ~Grand piano Action : Herburger Brooks 
 
 
-~Now sending midi to HammerSound where audio is initialized with RtAudio!
+~Wavetable synth module - HammerSound
 
