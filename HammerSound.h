@@ -11,33 +11,33 @@
 
 class ADSR {
 public:
-    ADSR(double attackTime, double decayTime, double sustainLevel, double releaseTime)
-        : attackTime(attackTime), decayTime(decayTime), sustainLevel(sustainLevel), releaseTime(releaseTime), time(0.0), state(State::Off) {}
+    ADSR(float attackTime, float decayTime, float sustainLevel, float releaseTime)
+        : attackTime(attackTime), decayTime(decayTime), sustainLevel(sustainLevel), releaseTime(releaseTime), time(0.0f), state(State::Off) {}
 
     void noteOn() {
         state = State::Attack;
-        time = 0.0;
+        time = 0.0f;
     }
 
     void noteOff() {
         if (state != State::Off) {
             state = State::Release;
-            time = 0.0;
+            time = 0.0f;
         }
     }
 
-    double process(double sampleRate) {
-        double output = 0.0;
+    float process(float sampleRate) {
+        float output = 0.0f;
 
         if (state == State::Attack) {
             output = time / attackTime;
             if (time >= attackTime) {
                 state = State::Decay;
-                time = 0.0;
+                time = 0.0f;
             }
         }
         else if (state == State::Decay) {
-            output = 1.0 - (1.0 - sustainLevel) * time / decayTime;
+            output = 1.0f - (1.0f - sustainLevel) * time / decayTime;
             if (time >= decayTime) {
                 state = State::Sustain;
             }
@@ -46,13 +46,13 @@ public:
             output = sustainLevel;
         }
         else if (state == State::Release) {
-            output = sustainLevel * (1.0 - time / releaseTime);
+            output = sustainLevel * (1.0f - time / releaseTime);
             if (time >= releaseTime) {
                 state = State::Off;
             }
         }
 
-        time += 1.0 / sampleRate;
+        time += 1.0f / sampleRate;
         return output;
     }
 
@@ -60,44 +60,38 @@ private:
     enum class State { Off, Attack, Decay, Sustain, Release };
     State state;
 
-    double attackTime;
-    double decayTime;
-    double sustainLevel;
-    double releaseTime;
-    double time;
+    float attackTime;
+    float decayTime;
+    float sustainLevel;
+    float releaseTime;
+    float time;
 };
 
-
 struct ActiveNote {
-    double frequency;
-    double amplitude;
-    double phase;
-    double time;
+    float frequency;
+    float amplitude;
+    float phase;
+    float time;
     bool isNoteOn;
-    double fadeTime;
+    float originalPhase;
     ADSR adsrEnvelope;
-
-    double duration;
-
-    bool fadingOut;
-    double originalPhase;
 };
 
 const unsigned int WAVE_TABLE_SIZE = 2048;
 
 class SimpleCompressor {
 public:
-    SimpleCompressor(double threshold, double ratio, double attack, double release)
-        : threshold(threshold), ratio(ratio), attack(attack), release(release), envelope(0.0) {}
+    SimpleCompressor(float threshold, float ratio, float attack, float release)
+        : threshold(threshold), ratio(ratio), attack(attack), release(release), envelope(0.0f) {}
 
-    double processSample(double input) {
-        double inputLevel = fabs(input);
-        double gainReduction = 1.0;
+    float processSample(float input) {
+        float inputLevel = fabs(input);
+        float gainReduction = 1.0f;
 
         if (inputLevel > threshold) {
-            gainReduction = threshold / inputLevel;
-            double desiredEnvelope = gainReduction;
-            double attackRelease = inputLevel > envelope ? attack : release;
+            gainReduction = 1.0f - ((1.0f - (threshold / inputLevel)) / ratio);
+            float desiredEnvelope = gainReduction;
+            float attackRelease = inputLevel > envelope ? attack : release;
             envelope += (desiredEnvelope - envelope) * attackRelease;
         }
 
@@ -105,14 +99,59 @@ public:
     }
 
 private:
-    double threshold;
-    double ratio;
-    double attack;
-    double release;
-    double envelope;
+    float threshold;
+    float ratio;
+    float attack;
+    float release;
+    float envelope;
+};
+
+class SimpleDelay {
+public:
+    SimpleDelay(float delayTime, float feedback, float mix, float sampleRate)
+        : delayBufferSize(static_cast<unsigned int>(delayTime* sampleRate)),
+        delayBuffer(delayBufferSize, 0.0f),
+        delayWriteIndex(0),
+        feedback(feedback),
+        mix(mix) {}
+
+    float processSample(float inputSample) {
+        unsigned int delayReadIndex = (delayWriteIndex - delayBufferSize) % delayBufferSize;
+        float delaySample = delayBuffer[delayReadIndex];
+        float outputSample = inputSample + mix * delaySample;
+        delayBuffer[delayWriteIndex] = inputSample + feedback * delaySample;
+        delayWriteIndex = (delayWriteIndex + 1) % delayBufferSize;
+        return outputSample;
+    }
+
+private:
+    unsigned int delayBufferSize;
+    std::vector<float> delayBuffer;
+    unsigned int delayWriteIndex;
+    float feedback;
+    float mix;
 };
 
 
+class MasterGain {
+public:
+    MasterGain(float gain) : gain(gain) {}
+
+    void setGain(float newGain) {
+        gain = newGain;
+    }
+
+    float getGain() const {
+        return gain;
+    }
+
+    double processSample(double inputSample) {
+        return inputSample * gain;
+    }
+
+private:
+    float gain;
+};
 
 class HammerSound {
 public:
@@ -124,8 +163,6 @@ public:
     void sendNoteOn(int midi_pitch, int midi_velocity);
     void sendNoteOff(int midi_pitch);
     void sendTestBeep();
-    double raisedCosineFadeIn(double time, double duration);
-  
 
 private:
     std::unique_ptr<RtAudio> audioOut;
@@ -141,6 +178,8 @@ private:
 
     SimpleCompressor compressor;
     ADSR adsrEnvelope;
-
+    SimpleDelay delay;
+    MasterGain masterGain;
 };
+
 

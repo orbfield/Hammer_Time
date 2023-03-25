@@ -9,8 +9,8 @@
 
 // Raw midi function
 int time_to_velocity(double elapsed_time_ms) {
-    double min_time = 20.0;
-    double max_time = 80.0;
+    float min_time = 5.0;
+    float max_time = 65.0;
     int max_velocity = 127;
     int min_velocity = 1;
 
@@ -21,31 +21,32 @@ int time_to_velocity(double elapsed_time_ms) {
         return min_velocity;
     }
     else {
-        double velocity = max_velocity - (max_velocity - min_velocity) * (elapsed_time_ms - min_time) / (max_time - min_time);
+        float velocity = max_velocity - (max_velocity - min_velocity) * (elapsed_time_ms - min_time) / (max_time - min_time);
         return static_cast<int>(velocity);
     }
 }
 
 // Midi velocity curve function 
-int ConvertMidiValue(int value, double deviation) {
-    if (deviation < -100 || deviation > 100) {
+int ConvertMidiValue(int value, float deviation) {
+    if (deviation < -100.0f || deviation > 100.0f) {
         throw std::invalid_argument("Value must be between -100 and 100");
     }
-    double minMidiValue = 0.0;
-    double maxMidiValue = 127.0;
-    double midMidiValue = 63.5;
+    float minMidiValue = 0.0f;
+    float maxMidiValue = 127.0f;
+    float midMidiValue = 63.5f;
 
     // Control point for the quadratic bezier curve - range: 0 (min) to 63.5 (max)
-    double controlPointX = midMidiValue + ((deviation / 100) * midMidiValue);
+    float controlPointX = midMidiValue + ((deviation / 100.0f) * midMidiValue);
 
     // Get the percent position of the incoming value in relation to the max
-    double t = static_cast<double>(value) / maxMidiValue;
+    float t = static_cast<float>(value) / maxMidiValue;
 
     // The quadratic bezier curve formula
-    int delta = static_cast<int>(std::round((2 * (1 - t) * t * controlPointX) + (t * t * maxMidiValue)));
+    int delta = static_cast<int>(std::round((2.0f * (1.0f - t) * t * controlPointX) + (t * t * maxMidiValue)));
 
     return (value - delta) + value;
 }
+
 
 // Ready Synth
 void run_hammer_sound(std::shared_ptr<HammerSound> hammerSound) {
@@ -246,7 +247,7 @@ int main()
             cv::Scalar color2(0, 150, 0);
             cv::rectangle(frame, roi1, color1, 1);
             cv::rectangle(frame, roi2, color2, 1);
-
+            /*
             // Display the first 12 pairs of switches
             if (j < 12) {
                 cv::Mat roi_binary_comb;
@@ -254,7 +255,7 @@ int main()
                 std::string switch_names = col_labels[j] + " switches";
                 cv::namedWindow(switch_names, cv::WINDOW_NORMAL);
                 cv::imshow(switch_names, roi_binary_comb);
-            }
+            }*/
         }
 
         // Create a black mask at bottom of screen
