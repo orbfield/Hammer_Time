@@ -2,9 +2,21 @@
 Capture motion of piano hammers using Opencv
 
 
+![Action in action](https://user-images.githubusercontent.com/127656509/227723754-0c79c692-28b3-46a3-836f-9c122ee56b4e.gif)
 
 
-https://user-images.githubusercontent.com/127656509/226453411-39663563-8a32-49f2-b9ce-76d01a8227f8.mp4
+
+![open cv output window](https://user-images.githubusercontent.com/127656509/227723810-9817b7ff-9fa7-4ea0-a501-4ccd1bf14e28.gif)
+
+
+
+![Hammer Time](https://user-images.githubusercontent.com/127656509/227723766-46cde4f9-6fcc-4459-a3f7-22151f126d1e.gif)
+
+
+![speed test gif](https://user-images.githubusercontent.com/127656509/227723769-dd5950e4-052a-4fc5-b95b-932750255e9d.gif)
+
+
+
 
 
 
