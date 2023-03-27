@@ -9,8 +9,8 @@
 
 // Raw midi function
 int time_to_velocity(double elapsed_time_ms) {
-    float min_time = 5.0;
-    float max_time = 65.0;
+    double min_time = 5.0;
+    double max_time = 65.0;
     int max_velocity = 127;
     int min_velocity = 1;
 
@@ -21,7 +21,7 @@ int time_to_velocity(double elapsed_time_ms) {
         return min_velocity;
     }
     else {
-        float velocity = max_velocity - (max_velocity - min_velocity) * (elapsed_time_ms - min_time) / (max_time - min_time);
+        double velocity = max_velocity - (max_velocity - min_velocity) * (elapsed_time_ms - min_time) / (max_time - min_time);
         return static_cast<int>(velocity);
     }
 }
@@ -47,7 +47,6 @@ int ConvertMidiValue(int value, float deviation) {
     return (value - delta) + value;
 }
 
-
 // Ready Synth
 void run_hammer_sound(std::shared_ptr<HammerSound> hammerSound) {
     hammerSound->run();
@@ -57,45 +56,14 @@ int main()
 {    
     double fps = 0;
     double last_tick = 0;
-
-    RtMidiOut midi_out;
-    int num_ports = midi_out.getPortCount();
-    std::string port_name;
-    for (int i = 0; i < num_ports; i++) {
-        try {
-            port_name = midi_out.getPortName(i);
-            std::cout << "MIDI port #" << i << ": " << port_name << std::endl;
-        }
-        catch (RtMidiError& error) {
-            error.printMessage();
-        }
-    }
-
-    // Initialize MIDI output
-    RtMidiOut midiOut;
-
+ 
     // Create a shared HammerSound object
     auto hammerSound = std::make_shared<HammerSound>();
 
     // Run synthesizer module on a separate thread
     std::thread hammer_sound_thread(run_hammer_sound, hammerSound);
 
-    // Test midi
-    std::vector<unsigned char> messageOn(3);
-    messageOn[0] = 0x90; // Note On message
-    messageOn[1] = 60;   // pitch = middle C
-    messageOn[2] = 100;  // velocity
-    midiOut.sendMessage(&messageOn);
 
-       cv::waitKey(50);
-
-    std::vector<unsigned char> messageOff(3);
-    messageOff[0] = 0x80; // Note Off message
-    messageOff[1] = 60;
-    messageOff[2] = 0;
-    midiOut.sendMessage(&messageOff);
-
-    // Create webcam feed
     cv::namedWindow("Hammer Time", cv::WINDOW_NORMAL);
 
     cv::VideoCapture cap(cv::CAP_DSHOW);
@@ -201,11 +169,6 @@ int main()
                 // Switch 1 turned off: send midi
                 int midi_pitch = 50+ j;
                 hammerSound->sendNoteOff(midi_pitch);
-                std::vector<unsigned char> messageOff(3);
-                messageOff[0] = 0x80;
-                messageOff[1] = midi_pitch;
-                messageOff[2] = 0;
-                midiOut.sendMessage(&messageOff);
             }
 
             // Check if switch 2 is on or off 
@@ -227,12 +190,7 @@ int main()
 
                 // Send MIDI message
                 int midi_pitch = 50+ j;
-                hammerSound->sendNoteOn(midi_pitch, midi_velocity);
-                std::vector<unsigned char> messageOn(3);
-                messageOn[0] = 0x90;
-                messageOn[1] = midi_pitch;
-                messageOn[2] = midi_velocity;
-                midiOut.sendMessage(&messageOn);
+                hammerSound->sendNoteOn(midi_pitch, midi_velocity);        
             }
             if (!switch2_on && prev_switch2_state[j]) {
                 // Switch 2 turned off
