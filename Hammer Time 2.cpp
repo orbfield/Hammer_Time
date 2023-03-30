@@ -9,8 +9,8 @@
 
 // Raw midi function
 int time_to_velocity(double elapsed_time_ms) {
-    double min_time = 5.0;
-    double max_time = 65.0;
+    double min_time = 10.0;
+    double max_time = 75.0;
     int max_velocity = 127;
     int min_velocity = 1;
 
@@ -185,7 +185,7 @@ int main()
 
                 // Convert elapsed time to MIDI velocity
                 int raw_velocity = time_to_velocity(switch1_elapsed_time * 1000);
-                double deviation = 0;  // Change from 100 (lower velocities) to -100 (higher velocities) 
+                double deviation = 50;  // Change from 100 (lower velocities) to -100 (higher velocities) 
                 int midi_velocity = ConvertMidiValue(raw_velocity, deviation);
 
                 // Send MIDI message

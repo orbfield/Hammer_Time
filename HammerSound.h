@@ -7,7 +7,10 @@
 #include <memory>
 #include <algorithm>
 #include <cmath>
+#include <deque>
 
+
+const unsigned int WAVE_TABLE_SIZE = 4096;
 
 class ADSR {
 public:
@@ -30,26 +33,24 @@ private:
 
 
 struct ActiveNote {
-    void reset(float newFrequency, float newAmplitude) {
+    void reset(double newFrequency, double newAmplitude) {
         frequency = newFrequency;
         amplitude = newAmplitude;
-        phase = 0.0f;
-        time = 0.0f;
+        phase = 0.0;
+        time = 0.0;
         isNoteOn = true;
-        originalPhase = 0.0f;
+        originalPhase = 0.0;
         adsrEnvelope.reset(); 
     }
-    float frequency;
-    float amplitude;
-    float phase;
-    float time;
+    double frequency;
+    double amplitude;
+    double phase;
+    double time;
     bool isNoteOn;
-    float originalPhase;
+    double originalPhase;
     
     ADSR adsrEnvelope;
 };
-
-const unsigned int WAVE_TABLE_SIZE = 2048;
 
 
 class SimpleCompressor {
@@ -65,22 +66,38 @@ private:
     double release;
     double kneeWidth;
     double envelope;
+    double rmsSum;
+    unsigned int rmsWindowSize;
+    std::deque<double> rmsWindow;
 };
+
+class LowPassFilter {
+public:
+    LowPassFilter(double cutoffFrequency, double sampleRate);
+
+    double processSample(double inputSample);
+
+private:
+    double alpha;
+    double previousOutput;
+};
+
 
 class SimpleDelay {
 public:
     SimpleDelay(double delayTime, double feedback, double mix, unsigned int sampleRate);
 
-    double processSample(double inputSample);
+    double processSample(double inputSample, bool isLeftChannel);
 
 private:
     unsigned int delayBufferSize;
-    std::vector<double> delayBuffer;
-    unsigned int delayWriteIndex;
+    std::vector<double> delayBufferLeft;
+    std::vector<double> delayBufferRight;
+    unsigned int delayWriteIndexLeft;
+    unsigned int delayWriteIndexRight;
     double feedback;
     double mix;
 };
-
 
 class MasterGain {
 public:
@@ -107,12 +124,36 @@ public:
     void sendNoteOn(int midi_pitch, int midi_velocity);
     void sendNoteOff(int midi_pitch);
     void sendTestBeep();
+    void setWaveLevel(unsigned char controllerNumber, double waveLevel) {
+        std::lock_guard<std::mutex> lock(mtx);
+        switch (controllerNumber) {
+        case 49:  // Fader 1
+            sineWaveLevel = waveLevel;
+            break;
+        case 50:  // Fader 2
+            squareWaveLevel = waveLevel;
+            break;
+        case 51:  // Fader 3
+            sawtoothWaveLevel = waveLevel;
+            break;
+        case 93:  // Fader 4
+            triangleWaveLevel = waveLevel;
+            break;
+        default:
+            break;
+        }
+    }
 
 
 private:
     std::unique_ptr<RtAudio> audioOut;
     std::shared_ptr<RtMidiOut> midiOut;
+    std::shared_ptr<RtMidiIn> midiIn;
     std::mutex mtx;
+
+    bool initializeAudio();
+    bool initializeMidiIn();
+    bool initializeMidiOut();
 
     std::atomic<bool> isPlaying;
     std::vector<ActiveNote> activeNotes;
@@ -126,11 +167,16 @@ private:
     std::vector<double> squareWaveTable;
     std::vector<double> sawtoothWaveTable;
     std::vector<double> triangleWaveTable;
+    std::atomic<double> sineWaveLevel;
+    std::atomic<double> squareWaveLevel;
+    std::atomic<double> sawtoothWaveLevel;
+    std::atomic<double> triangleWaveLevel;
 
     SimpleCompressor compressor;
     ADSR adsrEnvelope;
+    LowPassFilter lowPassFilter;
     SimpleDelay delay;
-    MasterGain masterGain;
+    MasterGain masterGain;  
 };
 
 
