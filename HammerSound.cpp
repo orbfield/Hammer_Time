@@ -9,6 +9,7 @@
 #include <atomic>
 #include <fstream>
 #include <mutex>
+#include <iomanip>
 
 HammerSound::HammerSound()
     : isPlaying(false),
@@ -22,7 +23,7 @@ HammerSound::HammerSound()
     sineWaveLevel(0.4),
     squareWaveLevel(0.2),
     sawtoothWaveLevel(0.1),
-    triangleWaveLevel(0.1) {
+    triangleWaveLevel(0.1) {   
     midiOut = std::make_shared<RtMidiOut>();
     createSineWaveTable(sineWaveTable);
     createSquareWaveTable(squareWaveTable);
@@ -82,67 +83,73 @@ int audioCallback(void* outputBuffer, void* inputBuffer, unsigned int nBufferFra
     HammerSound* hammerSound = static_cast<HammerSound*>(userData);
     return hammerSound->processAudioOutput(outputBuffer, inputBuffer, nBufferFrames, streamTime, status);
 }
-static void midiInputCallback(double timeStamp, std::vector<unsigned char>* message, void* userData) {
-    HammerSound* hammerSound = static_cast<HammerSound*>(userData);
 
+static void midiInputCallback(double timeStamp, std::vector<unsigned char>* message, void* userData) {
     if (message->size() < 2) {
         return;  // Ignore messages that are too short
     }
 
-    //unsigned char statusByte = message->at(0);
-   // unsigned char messageType = statusByte & 0xF0;  // Mask the lower nibble (channel information)
-    unsigned char messageType = message->at(0) & 0xF0;
-    unsigned char channel = message->at(0) & 0x0F;
+    unsigned char statusByte = message->at(0);
+    unsigned char channel = statusByte & 0x0F;
+    unsigned char messageType = statusByte & 0xF0; // Mask the lower nibble (channel information)
+    HammerSound* hammerSound = static_cast<HammerSound*>(userData);
+    
+
+
     switch (messageType) {
-    case 0x80: {  // Note Off
-        if (message->size() < 3) return;  // Note Off messages must have at least 3 bytes
-        int midi_pitch = message->at(1);
-        int midi_velocity = message->at(2);
-        hammerSound->sendNoteOff(midi_pitch);
-        break;
-    }
-    case 0x90: {  // Note On
-        if (message->size() < 3) return;  // Note On messages must have at least 3 bytes
-        int midi_pitch = message->at(1);
-        int midi_velocity = message->at(2);
-        if (midi_velocity == 0) {
-            // Some devices use Note On with velocity 0 for Note Off
-            hammerSound->sendNoteOff(midi_pitch);
+        case 0x80: {  // Note Off
+            if (message->size() < 3) return;
+            int midi_pitch = message->at(1);
+            int midi_velocity = message->at(2);
+            std::cout << "Note Off - Channel: " << static_cast<int>(channel) << ", MIDI pitch: " << midi_pitch << std::endl;
+
+           // Send Note Off message for all cases
+           hammerSound->sendNoteOff(midi_pitch);
+
+            break;
         }
-        else {
-            hammerSound->sendNoteOn(midi_pitch, midi_velocity);
+        case 0x90: {  // Note On
+            if (message->size() < 3) return;  // disabled channel 1
+            int midi_pitch = message->at(1);
+            int midi_velocity = message->at(2);
+            if (midi_velocity == 0) {
+                // Some devices use Note On with velocity 0 for Note Off and ofcourse it was avid
+                hammerSound->sendNoteOff(midi_pitch);
+                if (midi_pitch == 108) {
+                    hammerSound->sendFaderValue(4, 8192);
+                }
+            }
+            else {
+                if (midi_pitch <= 87) { // Only continue if pitch is less than or equal to 87
+                    hammerSound->sendNoteOn(midi_pitch, midi_velocity);
+                }
+               
+            }
+            break;
         }
-        break;
-    }
-    case 0xB0: {  // Control Change
-        unsigned char controllerNumber = message->at(1);
-        unsigned char controllerValue = message->at(2);
-        if (controllerNumber >= 48 && controllerNumber <= 51) { // Fader CC range from 49 to 51
-            double waveLevel = static_cast<double>(controllerValue) / 127.0;
-            hammerSound->setWaveLevel(controllerNumber, waveLevel);
-        }
-        // Handle CC93 separately if it has a different function
-        if (controllerNumber == 93) {
-            double waveLevel = static_cast<double>(controllerValue) / 127.0;
-            hammerSound->setWaveLevel(controllerNumber, waveLevel);
-        }
-        break;
+            case 0xE0: {  // Pitch Bend
+                if (message->size() < 3) return;
+                int lsb = message->at(1);
+                int msb = message->at(2);
+                int pitchBendValue = (msb << 7) + lsb;  // Combine LSB and MSB to get 14-bit value
+                
+                // Update wave level for the current channel in HammerSound object
+                double waveLevel = static_cast<double>(pitchBendValue) / 16383.0;
+                hammerSound->setWaveLevel(channel, waveLevel);
+
+                // Send pitch bend message to faders
+                hammerSound->sendFaderValue(channel, pitchBendValue);
+
+                double normalizedPitchBendValue = 2.0 * (static_cast<double>(pitchBendValue) / 16383.0) - 1.0;
+                
+                if (channel == 4) {
+                    
+                    hammerSound->Fader5PitchBend(normalizedPitchBendValue);
+                }
+            }
+
     }
 
-    case 0xE0: {  // Pitch Bend
-        if (message->size() < 3) return;
-        int lsb = message->at(1);
-        int msb = message->at(2);
-        int pitchBendValue = (msb << 7) + lsb;  // Combine LSB and MSB to get 14-bit value
-        // Process pitch bend here
-        break;
-    }
-    
-    default: {
-        // Ignore other message types
-        break;
-    }
-    }
 }
 
 void HammerSound::run() {
@@ -152,17 +159,19 @@ void HammerSound::run() {
             return;
         }
 
-        if (!initializeMidiIn()) {
-            std::cerr << "Failed to initialize MIDI input!" << std::endl;
-            return;
-        }
-
         if (!initializeMidiOut()) {
             std::cerr << "Failed to initialize MIDI output!" << std::endl;
             return;
         }
 
+        if (!initializeMidiIn()) {
+            std::cerr << "Failed to initialize MIDI input!" << std::endl;
+            return;
+        }
+      
         sendTestBeep();
+        
+        initializeFaders();
 
         char input;
         std::cout << "Press any key and hit enter to quit." << std::endl;
@@ -199,13 +208,11 @@ bool HammerSound::initializeAudio() {
         unsigned int bufferFrames = 256;
 
         RtAudio::DeviceInfo deviceInfo = audioOut->getDeviceInfo(parameters.deviceId);
-        std::cout << "\033[32mDefault Output Device:\033[0m " << deviceInfo.name << std::endl;
+        std::cout << "\033[32mDefault Output Device: " << deviceInfo.name << "\033[0m" << std::endl;
 
         audioOut->openStream(&parameters, nullptr, RTAUDIO_FLOAT64, sampleRate, &bufferFrames, &audioCallback, this);
         audioOut->startStream();
-
-        sendTestBeep();
-
+       
         return true;
     }
     /*
@@ -219,26 +226,6 @@ bool HammerSound::initializeAudio() {
     }
     catch (...) {
         std::cerr << "Unknown error occurred while initializing audio." << std::endl;
-        return false;
-    }
-}
-
-bool HammerSound::initializeMidiIn() {
-    try {
-        midiIn = std::make_shared<RtMidiIn>();
-        midiIn->setCallback(&midiInputCallback, this);
-
-        if (midiIn->getPortCount() == 0) {
-            std::cout << "No MIDI input ports available!" << std::endl;
-            return false;
-        }
-
-        midiIn->openPort(2); // Replace 0 with the desired input port index
-        std::cout << "MIDI input opened on port: " << midiIn->getPortName(2) << std::endl;
-        return true;
-    }
-    catch (RtMidiError& error) {
-        std::cerr << "RtMidi error: " << error.getMessage() << std::endl;
         return false;
     }
 }
@@ -264,13 +251,81 @@ bool HammerSound::initializeMidiOut() {
             return false;
         }
 
-        midiOut->openPort(1); // Replace 1 with the desired output port index
-        std::cout << "MIDI output opened on port: " << midiOut->getPortName(1) << std::endl;
+        midiOut->openPort(6);
+        std::cout << "\033[32mMIDI output opened on port: " << midiOut->getPortName(6) << "\033[0m" << std::endl;
         return true;
     }
     catch (RtMidiError& error) {
         std::cerr << "RtMidi error: " << error.getMessage() << std::endl;
         return false;
+    }
+}
+
+bool HammerSound::initializeMidiIn() {
+    try {
+        midiIn = std::make_shared<RtMidiIn>();
+        midiIn->setCallback(&midiInputCallback, this);
+
+        
+        int num_ports = midiIn->getPortCount();
+        std::string port_name;
+        for (int i = 0; i < num_ports; i++) {
+            try {
+                port_name = midiIn->getPortName(i);
+                std::cout << "MIDI input port #" << i << ": " << port_name << std::endl;
+            }
+            catch (RtMidiError& error) {
+                error.printMessage();
+            }
+        }
+
+        if (midiIn->getPortCount() == 0) {
+            std::cout << "No MIDI input ports available!" << std::endl;
+            return false;
+        }
+       
+        midiIn->openPort(5);
+        setMidiInputDeviceName(midiIn->getPortName(5));
+        std::cout << "\033[32mMIDI input opened on port: " << midiInputDeviceName << "\033[0m" << std::endl;
+        return true;
+    }
+    catch (RtMidiError& error) {
+        std::cerr << "RtMidi error: " << error.getMessage() << std::endl;
+        return false;
+    }
+}
+
+
+void HammerSound::sendFaderValue(unsigned char channel, double value) {
+    if (channel == 4 && value == 8192) {
+        std::vector<unsigned char> message;
+        message.push_back(0xE0 + channel);
+        // Split the 14-bit value into two 7-bit values (LSB and MSB)
+        message.push_back(static_cast<unsigned char>(static_cast<int>(value) & 0x7F)); // LSB
+        message.push_back(static_cast<unsigned char>((static_cast<int>(value) >> 7) & 0x7F)); // MSB
+
+        std::lock_guard<std::mutex> lock(midiOutMutex); // Lock the midiOutMutex instead
+        // Send the message to the connected MIDI device
+        midiOut->sendMessage(&message);
+
+        // Calculate and set the pitch bend value based on the fader value
+        double pitchBendValue = (value / 16383.0) * 2.0 - 1.0;
+        this->setPitchBend(pitchBendValue); // Replace hammerSound with this
+    }
+    else {
+        if (midiOut) {
+            std::vector<unsigned char> message;
+
+            // Start a pitch bend message for the specified channel
+            message.push_back(0xE0 + channel);
+            // Split the 14-bit value into two 7-bit values (LSB and MSB)
+            message.push_back(static_cast<unsigned char>(static_cast<int>(value) & 0x7F)); // LSB
+            message.push_back(static_cast<unsigned char>((static_cast<int>(value) >> 7) & 0x7F)); // MSB
+
+            std::lock_guard<std::mutex> lock(midiOutMutex); // Lock the midiOutMutex instead
+            // Send the message to the connected MIDI device
+            midiOut->sendMessage(&message);
+        }
     }
 }
 
@@ -483,7 +538,7 @@ double MasterGain::processSample(double inputSample) {
     return inputSample * gain;
 }
 
-// Process Audio Output
+// Generate Sound
 int HammerSound::processAudioOutput(void* outputBuffer, void* inputBuffer, unsigned int nBufferFrames,
     double streamTime, RtAudioStreamStatus status) {
 
@@ -502,6 +557,8 @@ int HammerSound::processAudioOutput(void* outputBuffer, void* inputBuffer, unsig
         triangleWaveLevel = this->triangleWaveLevel;
     }
 
+    double pitchBendValue = getPitchBend(); // Retrieve the pitch bend value
+
     std::unique_lock<std::mutex> lock(activeNotesMutex);
     for (unsigned int i = 0; i < nBufferFrames; ++i) {
         double mixedSample = 0.0;
@@ -509,7 +566,7 @@ int HammerSound::processAudioOutput(void* outputBuffer, void* inputBuffer, unsig
         for (ActiveNote& note : activeNotes) {
             double phaseRatio = note.phase / (2.0 * M_PI);
             unsigned int tableIndex = static_cast<unsigned int>(WAVE_TABLE_SIZE * phaseRatio) % WAVE_TABLE_SIZE;
-            double carrierFrequency = note.frequency;
+            double carrierFrequency = note.frequency * pow(2.0, pitchBendValue * 2.0 / 12.0); // Apply pitch bend factor
 
             double envelopeAmplitude = note.amplitude * note.adsrEnvelope.process(sampleRate);
 

@@ -124,26 +124,57 @@ public:
     void sendNoteOn(int midi_pitch, int midi_velocity);
     void sendNoteOff(int midi_pitch);
     void sendTestBeep();
-    void setWaveLevel(unsigned char controllerNumber, double waveLevel) {
+
+   
+
+    void setMidiInputDeviceName(const std::string& name) {
+        midiInputDeviceName = name;
+    }
+
+    void setPitchBend(double value) {
+        std::lock_guard<std::mutex> lock(pitchBendMtx);
+        pitchBend = value;
+    }
+    
+    // Add a new method to handle fader 5 value changes
+    void Fader5PitchBend(double value) {
+        // Normalize value to the pitch bend range of -1 to 1
+        double pitchBendValue = 2.0 * (value - 0.5);
+        setPitchBend(pitchBendValue);
+    }
+    double getPitchBend() const {
+        std::lock_guard<std::mutex> lock(pitchBendMtx);
+        return pitchBend;
+    }
+
+    void sendFaderValue(unsigned char channel, double value);
+ 
+    void setWaveLevel(unsigned char channel, double waveLevel) {
         std::lock_guard<std::mutex> lock(mtx);
-        switch (controllerNumber) {
-        case 49:  // Fader 1
+        switch (channel) {
+        case 0:  // Fader 1
             sineWaveLevel = waveLevel;
             break;
-        case 50:  // Fader 2
+        case 1:  // Fader 2
             squareWaveLevel = waveLevel;
             break;
-        case 51:  // Fader 3
+        case 2:  // Fader 3
             sawtoothWaveLevel = waveLevel;
             break;
-        case 93:  // Fader 4
+        case 3:  // Fader 4
             triangleWaveLevel = waveLevel;
             break;
+
         default:
             break;
         }
     }
-
+    void initializeFaders() {
+        sendFaderValue(0, sineWaveLevel * 16383.0);
+        sendFaderValue(1, squareWaveLevel * 16383.0);
+        sendFaderValue(2, sawtoothWaveLevel * 16383.0);
+        sendFaderValue(3, triangleWaveLevel * 16383.0);
+    }
 
 private:
     std::unique_ptr<RtAudio> audioOut;
@@ -171,6 +202,14 @@ private:
     std::atomic<double> squareWaveLevel;
     std::atomic<double> sawtoothWaveLevel;
     std::atomic<double> triangleWaveLevel;
+
+    double pitchBend; // Pitch bend value, range: [-1, 1]
+    mutable std::mutex pitchBendMtx;
+
+    std::string midiInputDeviceName; 
+    /*bool isEuphonixMCMix() const {
+        return midiInputDeviceName.find("Euphonix") != std::string::npos;
+    }*/
 
     SimpleCompressor compressor;
     ADSR adsrEnvelope;
